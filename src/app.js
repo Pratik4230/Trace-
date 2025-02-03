@@ -3,19 +3,20 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import "dotenv/config";
 
+import authCheck from "./middlewares/authCheck.js";
+
 import authRoutes from "./routes/auth.route.js";
 import adminAndReseller from "./routes/adminAndReseller.route.js";
 import user from "./routes/user.route.js";
-
 import CallLog from "./models/CallLog.model.js";
-import authCheck from "./middlewares/authCheck.js";
+import campaign from "./routes/campaign.route.js";
 
 const app = express();
 
 app.options(
   "*",
   cors({
-    origin: "http://localhost:5173",
+    origin: "http://localhost:3000",
     credentials: true,
   })
 );
@@ -33,6 +34,7 @@ app.use(cookieParser());
 app.use("/auth", authRoutes);
 app.use("/admin-and-reseller", adminAndReseller);
 app.use("/user", user);
+app.use("/campaign", campaign);
 
 app.post("/addCallLogs", async (req, res) => {
   const {

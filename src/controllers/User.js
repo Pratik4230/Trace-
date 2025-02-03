@@ -4,6 +4,7 @@ import Device from "../models/Device.model.js";
 import UsedPassword from "../models/UsedPassword.model.js";
 import CallLog from "../models/CallLog.model.js";
 import mongoose from "mongoose";
+import bcrypt from "bcrypt";
 
 const getProfile = async (req, res) => {
   try {
@@ -32,8 +33,6 @@ const checkUsedPassword = async (req, res) => {
     for (const record of oldPasswords) {
       const match = await bcrypt.compare(newPassword, record.password);
       if (match) {
-        console.log("Password has been used before");
-
         return res.status(400).json({
           message:
             "This password has been used before. Please choose a different one.",
@@ -51,7 +50,6 @@ const checkUsedPassword = async (req, res) => {
 const deleteDevice = async (req, res) => {
   const { id } = req.params;
   const userId = req.user?._id;
-  console.log("id", id, "userId", userId);
 
   try {
     const device = await Device.findOne({
@@ -60,8 +58,6 @@ const deleteDevice = async (req, res) => {
     });
 
     if (!device) {
-      console.log("noy found");
-
       return res
         .status(404)
         .json({ message: "Device not found or unauthorized" });
@@ -72,10 +68,6 @@ const deleteDevice = async (req, res) => {
 
     device.deletedAt = new Date();
     await device.save();
-
-    console.log("device", device);
-
-    console.log("deleted");
 
     res.json({ message: "Device deleted successfully (soft delete applied)" });
   } catch (error) {
@@ -123,7 +115,6 @@ const getDeviceCallLogs = async (req, res) => {
 
 const getAnalyticsCalls = async (req, res) => {
   const { filter, start_date, end_date } = req.query;
-  console.log("filter", filter);
 
   try {
     const userId = req.user._id;
@@ -243,25 +234,106 @@ const getAnalyticsCalls = async (req, res) => {
 const getUserCallLogs = async (req, res) => {
   try {
     const userId = req.user._id;
+    const { page = 1, limit = 10, search = "" } = req.query;
 
-    const userCallLogs = await CallLog.find({
-      userId: userId,
-    })
-      .select("_id number type callDate duration simSlot ")
-      .sort({ callDate: -1 });
+    const matchStage = {
+      userId: new mongoose.Types.ObjectId(userId),
+    };
 
-    if (!userCallLogs) {
-      return res.status(204).json({ message: "User call logs empty" });
+    if (search) {
+      matchStage.$or = [
+        { number: { $regex: search, $options: "i" } }, // Phone number
+        { type: { $regex: search, $options: "i" } }, // Type (Incoming, Outgoing)
+        { "device.deviceName": { $regex: search, $options: "i" } }, // Device Name
+      ];
     }
 
-    res.json({
-      userId,
-      total_logs: userCallLogs.length,
-      call_logs: userCallLogs,
-    });
+    const userCallLogs = await CallLog.aggregate([
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: "devices",
+          localField: "deviceId",
+          foreignField: "_id",
+          as: "device",
+        },
+      },
+      { $unwind: "$device" },
+      { $sort: { createdAt: -1 } },
+      {
+        $project: {
+          number: 1,
+          type: 1,
+          callDate: 1,
+          duration: 1,
+          simSlot: 1,
+          deviceName: "$device.deviceName",
+          lastSmsSentAt: 1,
+        },
+      },
+      { $skip: (page - 1) * limit },
+      { $limit: parseInt(limit) },
+    ]);
+
+    const totalLogs = await CallLog.countDocuments(matchStage);
+    const totalPages = Math.ceil(totalLogs / limit);
+
+    if (!userCallLogs.length) {
+      return res.status(204).json({ message: "No call logs found" });
+    }
+
+    res.json({ callLogs: userCallLogs, totalPages, currentPage: Number(page) });
   } catch (error) {
     console.log("erre");
     return res.status(500).json({ message: error.message });
+  }
+};
+
+const updateProfile = async (req, res) => {
+  try {
+    const { oldPassword, name, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: "old Password and new Password  required" });
+    }
+
+    if (oldPassword === newPassword) {
+      return res.status(400).json({ message: "New password cannot be same" });
+    }
+
+    const loggedInUser = await User.findById(req.user._id);
+
+    const isPasswordValid = await bcrypt.compare(
+      oldPassword,
+      loggedInUser.password
+    );
+
+    if (!isPasswordValid) {
+      return res.status(401).send("Invalid Credentials");
+    }
+
+    let newName;
+    if (name) {
+      newName = name;
+    } else {
+      newName = loggedInUser.name;
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 11);
+
+    loggedInUser.password = hashedPassword;
+    loggedInUser.name = newName;
+
+    await loggedInUser.save();
+
+    return res.status(200).json({ message: "profile updated successfully" });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Profile update error",
+      error,
+    });
   }
 };
 
@@ -272,4 +344,5 @@ export {
   getDeviceCallLogs,
   getAnalyticsCalls,
   getUserCallLogs,
+  updateProfile,
 };

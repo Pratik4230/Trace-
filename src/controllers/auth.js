@@ -5,15 +5,25 @@ import bcrypt from "bcrypt";
 import User from "../models/User.model.js";
 import PasswordReset from "../models/PasswordReset.model.js";
 
-// const generateToken = (user, expiresIn) => {
-//   return jwt.sign(
-//     { id: user.user_id, role: user.role, name: user.name, email: user.email },
-//     process.env.JWT_SECRET,
-//     {
-//       expiresIn,
-//     }
-//   );
-// };
+import Joi from "joi";
+
+const userValidationSchema = Joi.object({
+  name: Joi.string().min(3).max(50).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string()
+    .min(8)
+    .max(20)
+    .pattern(
+      new RegExp(
+        "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$"
+      )
+    )
+    .message(
+      "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)."
+    )
+    .required(),
+  role: Joi.string().valid("reseller", "user").required(),
+});
 
 const generateToken = (user, expiresIn) => {
   return jwt.sign(
@@ -38,11 +48,8 @@ const removePassword = (user) => {
   return userWithoutPassword;
 };
 
-// const generateReferralCode = () => uuidv4().slice(0, 8).toUpperCase();
 const generateReferralCode = () => Math.random().toString(36).slice(2, 10);
 
-// Nodemailer Setup
-// TODO
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -55,22 +62,26 @@ const signup = async (req, res) => {
   try {
     const { name, email, password, role, referral_code } = req.body;
 
+    const { error } = userValidationSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
+    }
+
     const alreadyExist = await User.findOne({ email: email });
     if (alreadyExist) {
       return res.status(400).json({ message: "User already registered." });
     }
 
+    if (role == "manager" || role == "member") {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 11);
 
     let referredBy = null;
-    let newReferralCode = null;
+    let newReferralCode = generateReferralCode();
 
-    if (role === "reseller") {
-      // Generate Referral Code for Reseller
-      newReferralCode = generateReferralCode();
-    } else if (role === "user" && referral_code) {
-      // Validate Referral Code if Provided
-
+    if (role === "user" && referral_code) {
       const referrer = await User.findOne({ referral_code: referral_code });
       if (!referrer) {
         return res.status(400).json({ message: "Invalid referral code" });
@@ -115,30 +126,23 @@ const signup = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password, rememberMe } = req.body;
-    console.log(" login ", email, password, rememberMe);
 
     const user = await User.findOne({ email: email });
     if (!user) {
-      console.log("user not found");
-
       return res.status(404).json({ message: "User not found" });
     }
-    console.log("helllo");
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(400).json({ message: "Invalid password" });
     }
-    console.log("valid password");
-
     const expiresIn = rememberMe ? "30d" : "1d";
 
     const token = generateToken(user, expiresIn);
 
     const userWithoutPassword = removePassword(user);
-    console.log("valid password 2");
+
     if (rememberMe) {
-      console.log("valid password in ");
       return res
         .status(200)
         .cookie("auth_token", token, {
@@ -147,7 +151,6 @@ const login = async (req, res) => {
         })
         .json({ message: "Login successful", data: userWithoutPassword });
     } else {
-      console.log("valid password oo ");
       return res
         .status(200)
         .cookie("auth_token", token, {
@@ -166,7 +169,6 @@ const forgotPassword = async (req, res) => {
   const { email } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60000);
-  console.log("forgotPassword", email, otp, expiresAt);
 
   try {
     const user = await User.findOne({ email: email });
@@ -184,14 +186,8 @@ const forgotPassword = async (req, res) => {
       expiresAt: expiresAt,
     });
 
-    console.log("newPasswordReset", newPasswordReset);
-
     await newPasswordReset.save();
 
-    console.log("email is", email);
-    console.log(typeof email);
-
-    //LOOKOUT
     const mailOptions = {
       from: process.env.MAIL_USER,
       to: email,
@@ -207,8 +203,6 @@ const forgotPassword = async (req, res) => {
           .json({ message: "Failed to send OTP email", error: error.message });
       }
     });
-
-    console.log("Mail Options", mailOptions);
 
     return res.status(200).json({ message: "OTP Sent to Email" });
   } catch (err) {
@@ -254,10 +248,5 @@ const logout = async (req, res) => {
     console.log("logout error : ", error);
   }
 };
-
-// TODO
-// app.get("/protected-route", authenticate, (req, res) => {
-//   res.json({ message: "Welcome! You are authenticated.", user: req.user });
-// });
 
 export { signup, login, forgotPassword, resetPassword, logout };

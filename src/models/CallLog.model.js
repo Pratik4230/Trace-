@@ -43,7 +43,6 @@ const callLogSchema = new mongoose.Schema(
 
     LastSmsSentAt: {
       type: Date,
-      required: true,
     },
   },
 
