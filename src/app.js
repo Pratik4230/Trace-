@@ -13,17 +13,17 @@ import campaign from "./routes/campaign.route.js";
 
 const app = express();
 
-app.options(
-  "*",
-  cors({
-    origin: "http://localhost:3000",
-    credentials: true,
-  })
-);
+const allowedOrigins = process.env.ALLOWED_ORIGIN.split(",");
 
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGIN,
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
