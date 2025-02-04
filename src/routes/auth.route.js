@@ -8,6 +8,7 @@ import {
   signup,
   login,
   forgotPassword,
+  validateOTP,
   resetPassword,
   logout,
 } from "../controllers/auth.js";
@@ -15,6 +16,7 @@ import {
 router.route("/signup").post(signup);
 router.route("/login").post(login);
 router.route("/forgot-password").post(forgotPassword);
+router.route("/validate-otp").post(validateOTP);
 router.route("/reset-password").post(resetPassword);
 router.route("/logout").post(authCheck, logout);
 

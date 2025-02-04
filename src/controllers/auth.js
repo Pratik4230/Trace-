@@ -23,6 +23,7 @@ const userValidationSchema = Joi.object({
     )
     .required(),
   role: Joi.string().valid("reseller", "user").required(),
+  referral_code: Joi.string().allow("").optional(),
 });
 
 const generateToken = (user, expiresIn) => {
@@ -64,6 +65,8 @@ const signup = async (req, res) => {
 
     const { error } = userValidationSchema.validate(req.body);
     if (error) {
+      console.log("error : ", error);
+
       return res.status(400).json({ message: error.details[0].message });
     }
 
@@ -165,54 +168,90 @@ const login = async (req, res) => {
   }
 };
 
+// const forgotPassword = async (req, res) => {
+//   const { email } = req.body;
+//   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+//   const expiresAt = new Date(Date.now() + 10 * 60000);
+//   console.log("email is : ", email);
+
+//   try {
+//     const user = await User.findOne({ email: email });
+//     if (!user) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     const deletePasswordReset = await PasswordReset.findOneAndDelete({
+//       email: email,
+//     });
+
+//     const newPasswordReset = new PasswordReset({
+//       email: email,
+//       otp: otp,
+//       expiresAt: expiresAt,
+//     });
+
+//     await newPasswordReset.save();
+
+//     const mailOptions = {
+//       from: process.env.MAIL_USER,
+//       to: email,
+//       subject: "Password Reset OTP",
+//       text: `Your OTP for password reset is: ${otp}`,
+//     };
+
+//     transporter.sendMail(mailOptions, (error, info) => {
+//       if (error) {
+//         console.error("Email Error: ", error);
+//         return res
+//           .status(500)
+//           .json({ message: "Failed to send OTP email", error: error.message });
+//       }
+//     });
+
+//     return res.status(200).json({ message: "OTP Sent to Email", data: email });
+//   } catch (err) {
+//     console.error("Server Error: ", err);
+//     return res.status(500).json({ message: err.message });
+//   }
+// };
+
 const forgotPassword = async (req, res) => {
   const { email } = req.body;
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = Math.floor(1000 + Math.random() * 9000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60000);
+  console.log("email is : ", email, "otp is:", otp);
 
   try {
-    const user = await User.findOne({ email: email });
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const deletePasswordReset = await PasswordReset.findOneAndDelete({
-      email: email,
-    });
+    await PasswordReset.findOneAndDelete({ email });
 
-    const newPasswordReset = new PasswordReset({
-      email: email,
-      otp: otp,
-      expiresAt: expiresAt,
-    });
-
+    const newPasswordReset = new PasswordReset({ email, otp, expiresAt });
     await newPasswordReset.save();
 
-    const mailOptions = {
-      from: process.env.MAIL_USER,
-      to: email,
-      subject: "Password Reset OTP",
-      text: `Your OTP for password reset is: ${otp}`,
-    };
+    // const mailOptions = {
+    //   from: process.env.MAIL_USER,
+    //   to: email,
+    //   subject: "Password Reset OTP",
+    //   text: `Your OTP for password reset is: ${otp}`,
+    // };
 
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.error("Email Error: ", error);
-        return res
-          .status(500)
-          .json({ message: "Failed to send OTP email", error: error.message });
-      }
-    });
+    // Await the email sending process
+    // await transporter.sendMail(mailOptions);
 
-    return res.status(200).json({ message: "OTP Sent to Email" });
+    return res.status(200).json({ message: "OTP Sent to Email", data: email });
   } catch (err) {
     console.error("Server Error: ", err);
     return res.status(500).json({ message: err.message });
   }
 };
 
-const resetPassword = async (req, res) => {
-  const { email, otp, newPassword } = req.body;
+const validateOTP = async (req, res) => {
+  const { otp, email } = req.body;
+  console.log("otp: ", otp, email);
 
   const passwordResets = await PasswordReset.find({
     email,
@@ -223,7 +262,27 @@ const resetPassword = async (req, res) => {
   if (!passwordResets || passwordResets.length === 0)
     return res.status(404).json({ message: "Invalid or expired OTP" });
 
-  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  return res.status(200).json({ message: "OTP is valid" });
+};
+
+const resetPassword = async (req, res) => {
+  const { email, password, confirm_password } = req.body;
+
+  if (!email || !password || !confirm_password) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  if (password !== confirm_password) {
+    return res.status(200).json({ message: "Passwords do not match" });
+  }
+
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
 
   const updatedUser = await User.findOneAndUpdate(
     { email },
@@ -249,4 +308,4 @@ const logout = async (req, res) => {
   }
 };
 
-export { signup, login, forgotPassword, resetPassword, logout };
+export { signup, login, forgotPassword, validateOTP, resetPassword, logout };

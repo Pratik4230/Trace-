@@ -9,7 +9,7 @@ const passwordResetSchema = new mongoose.Schema(
     otp: {
       type: String,
       required: true,
-      minlength: 6,
+      minlength: 4,
     },
     expiresAt: {
       type: Date,
